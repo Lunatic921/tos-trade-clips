@@ -6,33 +6,41 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 	"trade-clipper/trading"
 )
 
 func main() {
-	dir := flag.String("dir", "", "TOS recording and trade history directory")
+	inputVideoPath := flag.String("iv", "", "TOS Recording")
+	inputStatementPath := flag.String("is", "", "TOS Broker Statement")
+	outputPath := flag.String("o", "", "Output Directory")
 	flag.Parse()
 
-	if *dir == "" {
-		fmt.Printf("Use -dir to provide a directory that contains the recording (.mkv) and TOS Account Statement (.csv)")
+	if *inputVideoPath == "" {
+		fmt.Println("Use -iv to provide an video recording")
+		os.Exit(1)
+	}
+	if *inputStatementPath == "" {
+		fmt.Println("Use -is to provide a TOS broker statement")
+		os.Exit(1)
+	}
+	if *outputPath == "" {
+		fmt.Println("Use -o to provide an output directory")
 		os.Exit(1)
 	}
 
-	portfolio := trading.NewPortfolio(*dir)
-	recordingFile := getRecordingFile(*dir)
+	portfolio := trading.NewPortfolio(*inputStatementPath)
 	trades := portfolio.GetTrades()
 
 	for _, trade := range trades {
-		clipTrade(*trade, recordingFile, *dir)
+		clipTrade(*trade, *inputVideoPath, *outputPath)
 	}
 }
 
 func clipTrade(trade trading.Trade, recordingFile string, recordingDir string) {
 	recordingStartTime := getStartTimeOfRecording(recordingFile)
-	tradeName := trade.Ticker + "-" + trade.OpenTime.Format("2006-01-02-15-04-05")
-	outputDir := recordingDir + "/clips/" + tradeName
+	tradeName := trade.OpenTime.Format("2006-01-02-15-04-05") + "-" + trade.Ticker
+	outputDir := recordingDir + "/" + tradeName
 
 	fmt.Println("Clipping: " + tradeName)
 
@@ -48,7 +56,7 @@ func clipTrade(trade trading.Trade, recordingFile string, recordingDir string) {
 	var stdout bytes.Buffer
 
 	filters := getScreenshotFilters(trade)
-	inputFile := recordingDir + "/" + recordingFile
+	inputFile := recordingFile
 	clipOutputFile := outputDir + "/" + tradeName + ".mkv"
 
 	clipCmd := []string{"-ss", fmtDuration(startOffset), "-t", fmtDuration(clipLength), "-i", inputFile,
@@ -101,7 +109,13 @@ func fmtDuration(d time.Duration) string {
 func getStartTimeOfRecording(recordingFilePath string) time.Time {
 	layout := "2006-01-02_15-04-05.mkv"
 
-	t, err := time.Parse(layout, recordingFilePath)
+	fileObj, err := os.Stat(recordingFilePath)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	t, err := time.Parse(layout, fileObj.Name())
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -116,20 +130,4 @@ func getStartTimeOfRecording(recordingFilePath string) time.Time {
 	t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc)
 
 	return t
-}
-
-func getRecordingFile(directory string) string {
-	files, err := os.ReadDir(directory)
-	if err != nil {
-		fmt.Printf("Failed to open directory: %+v\n", err)
-	}
-
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".mkv") {
-			return file.Name()
-		}
-
-	}
-
-	return ""
 }
